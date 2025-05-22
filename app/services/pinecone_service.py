@@ -1,5 +1,5 @@
 # app/services/pinecone_service.py
-from pinecone import Pinecone
+import pinecone
 from typing import List, Dict, Any, Tuple
 from app.config import get_settings
 from app.services.openai_service import OpenAIService
@@ -13,10 +13,10 @@ class PineconeService:
         Initialize Pinecone service with the configured settings.
         """
         try:
-            # Initialize Pinecone client
-            self.pc = Pinecone(api_key=settings.pinecone_api_key)
+            # Initialize Pinecone client with older syntax
+            pinecone.init(api_key=settings.pinecone_api_key)
             # Get the list of indexes
-            self.indexes = self.pc.list_indexes()
+            self.indexes = pinecone.list_indexes()
             # Initialize OpenAI service for embeddings
             self.openai_service = OpenAIService()
         except Exception as e:
@@ -27,7 +27,7 @@ class PineconeService:
         Get a Pinecone index by name.
         """
         try:
-            return self.pc.Index(index_name)
+            return pinecone.Index(index_name)
         except Exception as e:
             raise Exception(f"Failed to get index {index_name}: {str(e)}")
 
@@ -79,17 +79,17 @@ class PineconeService:
             references = []
 
             # Extract text and references from matches
-            for match in query_response.matches:
-                if match.metadata:
+            for match in query_response['matches']:
+                if 'metadata' in match:
                     # Extract text if available
-                    if 'text' in match.metadata:
-                        contexts.append(match.metadata['text'])
+                    if 'text' in match['metadata']:
+                        contexts.append(match['metadata']['text'])
 
                     # Extract file name and page if available
-                    if 'file_name' in match.metadata and 'page' in match.metadata:
+                    if 'file_name' in match['metadata'] and 'page' in match['metadata']:
                         references.append(Reference(
-                            file_name=match.metadata['file_name'],
-                            page=match.metadata['page']
+                            file_name=match['metadata']['file_name'],
+                            page=match['metadata']['page']
                         ))
 
             # Combine all context texts with newlines
@@ -136,6 +136,6 @@ class PineconeService:
         try:
             index = self.get_index(index_name)
             stats = index.describe_index_stats()
-            return list(stats.namespaces.keys())
+            return list(stats['namespaces'].keys())
         except Exception as e:
             raise Exception(f"Failed to list namespaces: {str(e)}")
