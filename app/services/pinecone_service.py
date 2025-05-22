@@ -16,6 +16,15 @@ class PineconeService:
         except Exception as e:
             raise Exception(f"Failed to initialize Pinecone service: {str(e)}")
 
+    def list_indexes(self) -> List[str]:
+        """
+        List all available Pinecone indexes.
+        """
+        try:
+            return [idx.name for idx in self.pc.list_indexes().indexes]
+        except Exception as e:
+            raise Exception(f"Failed to list indexes: {str(e)}")
+
     def get_index(self, index_name: str):
         """
         Get a Pinecone index by name.
@@ -36,44 +45,61 @@ class PineconeService:
         except Exception as e:
             raise Exception(f"Failed to list namespaces: {str(e)}")
 
-    async def query_all_namespaces(self, query: str, index_name: str, top_k: int = 5) -> Dict[str, Any]:
+    async def query_namespace(self, query_vector: List[float], index_name: str, namespace: str, top_k: int = 5) -> Dict[str, Any]:
         """
-        Query all namespaces in the index and combine results.
-
-        Args:
-            query (str): The query string to search for
-            index_name (str): The name of the index to query
-            top_k (int): Number of results to return per namespace
-
-        Returns:
-            Combined results from all namespaces
+        Query a specific namespace in an index.
         """
         try:
             index = self.get_index(index_name)
-            namespaces = self.list_namespaces(index_name)
+            query_response = index.query(
+                vector=query_vector,
+                top_k=top_k,
+                include_metadata=True,
+                namespace=namespace
+            )
 
+            # Add index and namespace information to each match
+            for match in query_response['matches']:
+                match['index_name'] = index_name
+                match['namespace'] = namespace
+
+            return query_response['matches']
+        except Exception as e:
+            print(f"Error querying {index_name}/{namespace}: {str(e)}")
+            return []
+
+    async def query_entire_database(self, query: str, top_k: int = 5) -> Dict[str, Any]:
+        """
+        Query all indexes and all namespaces in the database.
+
+        Args:
+            query (str): The query string to search for
+            top_k (int): Number of results to return per namespace
+
+        Returns:
+            Combined results from all indexes and namespaces
+        """
+        try:
             # Generate embedding vector for the query
             query_vector = await self.openai_service.generate_embedding(query)
 
             all_results = []
 
-            # Query each namespace
-            for namespace in namespaces:
-                try:
-                    # Perform the query with cosine similarity (default in Pinecone)
-                    query_response = index.query(
-                        vector=query_vector,
-                        top_k=top_k,
-                        include_metadata=True,
-                        namespace=namespace
-                    )
+            # Get all indexes
+            indexes = self.list_indexes()
 
-                    # Add namespace information to each match
-                    for match in query_response['matches']:
-                        match['namespace'] = namespace
-                        all_results.append(match)
+            # Query each index and namespace
+            for index_name in indexes:
+                try:
+                    # Get all namespaces in this index
+                    namespaces = self.list_namespaces(index_name)
+
+                    # Query each namespace
+                    for namespace in namespaces:
+                        matches = await self.query_namespace(query_vector, index_name, namespace, top_k)
+                        all_results.extend(matches)
                 except Exception as e:
-                    print(f"Error querying namespace {namespace}: {str(e)}")
+                    print(f"Error processing index {index_name}: {str(e)}")
                     continue
 
             # Sort all results by score (descending) and take top_k
@@ -83,7 +109,7 @@ class PineconeService:
             return {"matches": top_results}
 
         except Exception as e:
-            raise Exception(f"Pinecone query failed: {str(e)}")
+            raise Exception(f"Database-wide query failed: {str(e)}")
 
     def extract_context_and_references(self, query_response: Dict[str, Any]) -> Tuple[str, List[Reference]]:
         """
@@ -98,16 +124,17 @@ class PineconeService:
                 if 'metadata' in match:
                     # Extract text if available
                     if 'text' in match['metadata']:
-                        # Add namespace information to context
-                        namespace_info = f"[Source: {match['namespace']}]\n"
-                        contexts.append(namespace_info + match['metadata']['text'])
+                        # Add source information to context
+                        source_info = f"[Source: {match['index_name']}/{match['namespace']}]\n"
+                        contexts.append(source_info + match['metadata']['text'])
 
                     # Extract file name and page if available
                     if 'file_name' in match['metadata'] and 'page' in match['metadata']:
                         references.append(Reference(
                             file_name=match['metadata']['file_name'],
                             page=match['metadata']['page'],
-                            namespace=match['namespace']
+                            namespace=match['namespace'],
+                            index_name=match['index_name']
                         ))
 
             # Combine all context texts with newlines
@@ -118,16 +145,16 @@ class PineconeService:
         except Exception as e:
             raise Exception(f"Failed to extract context: {str(e)}")
 
-    async def search_across_all_namespaces(self, query: str, index_name: str, top_k: int = 5) -> Tuple[str, List[Reference]]:
+    async def search_entire_database(self, query: str, top_k: int = 5) -> Tuple[str, List[Reference]]:
         """
-        Search across all namespaces and process the query.
+        Search across all indexes and namespaces and process the query.
         """
         try:
-            # Query all namespaces
-            query_response = await self.query_all_namespaces(query, index_name, top_k)
+            # Query the entire database
+            query_response = await self.query_entire_database(query, top_k)
 
             # Extract and return context and references
             return self.extract_context_and_references(query_response)
 
         except Exception as e:
-            raise Exception(f"Search and process operation failed: {str(e)}")
+            raise Exception(f"Database-wide search failed: {str(e)}")
