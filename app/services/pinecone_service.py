@@ -10,15 +10,21 @@ settings = get_settings()
 class PineconeService:
     def __init__(self):
         try:
-            pinecone.init(api_key=settings.pinecone_api_key)
-            self.indexes = pinecone.list_indexes()
+            # New Pinecone client initialization (v3.x+)
+            self.pc = pinecone.Pinecone(api_key=settings.pinecone_api_key)
             self.openai_service = OpenAIService()
         except Exception as e:
             raise Exception(f"Failed to initialize Pinecone service: {str(e)}")
 
+    def list_indexes(self) -> List[str]:
+        try:
+            return [idx.name for idx in self.pc.list_indexes().indexes]
+        except Exception as e:
+            raise Exception(f"Failed to list indexes: {str(e)}")
+
     def get_index(self, index_name: str):
         try:
-            return pinecone.Index(index_name)
+            return self.pc.Index(index_name)
         except Exception as e:
             raise Exception(f"Failed to get index {index_name}: {str(e)}")
 
