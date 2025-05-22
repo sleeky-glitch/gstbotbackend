@@ -24,6 +24,15 @@ openai_service = OpenAIService()
 async def root():
     return {"message": "PDF Query API is running"}
 
+@app.get("/indexes")
+async def list_indexes():
+    """List all available Pinecone indexes."""
+    try:
+        indexes = pinecone_service.list_indexes()
+        return {"indexes": indexes}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/namespaces/{index_name}")
 async def list_namespaces(index_name: str):
     """List all namespaces in the specified index."""
@@ -34,19 +43,17 @@ async def list_namespaces(index_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/query", response_model=QueryResponse)
-async def handle_query(request: QueryRequest, index_name: str):
+async def handle_query(request: QueryRequest):
     """
-    Query the PDF database across all namespaces and get a response.
+    Query the entire PDF database across all indexes and namespaces.
 
     - **request**: The query request containing the query text and top_k
-    - **index_name**: The name of the Pinecone index to query
     """
-    print(f"Received request: {request}, index: {index_name}")
+    print(f"Received request: {request}")
     try:
-        # Query Pinecone for relevant context across all namespaces
-        context, references = await pinecone_service.search_across_all_namespaces(
+        # Query the entire database
+        context, references = await pinecone_service.search_entire_database(
             request.query,
-            index_name,
             request.top_k
         )
 
