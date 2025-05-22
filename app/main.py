@@ -1,10 +1,9 @@
 # app/main.py
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.models.schemas import QueryRequest, QueryResponse, Reference
+from app.models.schemas import QueryRequest, QueryResponse
 from app.services.pinecone_service import PineconeService
 from app.services.openai_service import OpenAIService
-from typing import List
 
 app = FastAPI(title="PDF Query API")
 
@@ -25,14 +24,6 @@ openai_service = OpenAIService()
 async def root():
     return {"message": "PDF Query API is running"}
 
-@app.get("/indexes")
-async def list_indexes():
-    """List all available Pinecone indexes."""
-    try:
-        return {"indexes": pinecone_service.indexes}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/namespaces/{index_name}")
 async def list_namespaces(index_name: str):
     """List all namespaces in the specified index."""
@@ -45,18 +36,17 @@ async def list_namespaces(index_name: str):
 @app.post("/query", response_model=QueryResponse)
 async def handle_query(request: QueryRequest, index_name: str):
     """
-    Query the PDF database and get a response.
+    Query the PDF database across all namespaces and get a response.
 
-    - **request**: The query request containing the query text, optional namespace, and top_k
+    - **request**: The query request containing the query text and top_k
     - **index_name**: The name of the Pinecone index to query
     """
     print(f"Received request: {request}, index: {index_name}")
     try:
-        # Query Pinecone for relevant context
-        context, references = await pinecone_service.search_and_process_query(
+        # Query Pinecone for relevant context across all namespaces
+        context, references = await pinecone_service.search_across_all_namespaces(
             request.query,
             index_name,
-            request.namespace,
             request.top_k
         )
 
